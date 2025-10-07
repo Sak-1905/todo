@@ -5,10 +5,10 @@ export default class Interactive {
       const toDoLists = display.getToDoListFromStorage();
       toDoLists[id].completed = statusCheck;
       display.addListToStorage(toDoLists);
-      display.showLists();
+      display.showLists(); // Re-render with current filter
     }
 
-    // checkbox status
+    // checkbox status (unchanged)
     static checkStatusEvent = () => (
       document.querySelectorAll('.checkbox').forEach((checkbox) => checkbox.addEventListener('change', () => {
         let statusCheck;
@@ -35,6 +35,6 @@ export default class Interactive {
       toDoLists = toDoLists.filter((item) => item.completed !== true);
       display.newIndexNum(toDoLists);
       display.addListToStorage(toDoLists);
-      display.showLists();
+      display.showLists(); // Re-render with current filter
     }
 }

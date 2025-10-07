@@ -1,10 +1,11 @@
 // import from src modules folder
-
 import DataList from './datalist.js';
 
 // get listed inputs from local storage
-
 export default class display {
+  // New: Track current filter (default 'all')
+  static currentFilter = 'all';
+
   static getToDoListFromStorage = () => {
     let toDoLists;
 
@@ -29,148 +30,171 @@ export default class display {
     });
   }
 
-  // delete from local storage
-    static deleteListData = (id) => {
-      let toDoLists = this.getToDoListFromStorage();
-      const ListItemToDelete = toDoLists[id];
+  // New: Filter tasks (All/Achieved/Todo)
+  static filterTasks(filterType) {
+    this.currentFilter = filterType;
+    let filteredLists = this.getToDoListFromStorage();
+    
+    switch (filterType) {
+      case 'achieved':
+        filteredLists = filteredLists.filter(item => item.completed === true);
+        break;
+      case 'todo':
+        filteredLists = filteredLists.filter(item => item.completed !== true);
+        break;
+      case 'all':
+      default:
+        // No filter
+        break;
+    }
+    
+    this.showFilteredLists(filteredLists);
+    this.updateFilterButtons(filterType);
+  }
 
-      toDoLists = toDoLists.filter((item) => item !== ListItemToDelete);
+  // New: Render filtered lists (handles inline edit/remove setup)
+  static showFilteredLists(filteredLists) {
+    const container = document.querySelector('.toDoListContainer');
+    container.innerHTML = '';
+    filteredLists.forEach((item) => {
+      let statusCheck = item.completed ? 'checked' : '';
+      let statusCompleted = item.completed ? 'completed' : '';
+      const ul = this.toDoListsHtml(item, statusCheck, statusCompleted);
+      container.appendChild(ul);
+    });
 
-      this.newIndexNum(toDoLists);
-      this.addListToStorage(toDoLists);
-    };
+    this.setupDeleteBtn(); // Independent remove
+    this.setupInlineEditing(); // Inline edit
 
-    static ListInputUpdate = (newDescription, id) => {
-      const toDoLists = this.getToDoListFromStorage();
-      const updateList = toDoLists[id];
+    const event = new Event('listUpdated');
+    document.dispatchEvent(event);
+  }
 
-      toDoLists.forEach((item) => {
-        if (item === updateList) {
-          item.description = newDescription;
-        }
-      });
+  // New: Update filter button active state
+  static updateFilterButtons(activeFilter) {
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.getElementById(`filter-${activeFilter}`).classList.add('active');
+  }
 
-      this.addListToStorage(toDoLists);
-      this.showLists();
-    };
+  // delete from local storage (unchanged, but used in independent remove)
+  static deleteListData = (id) => {
+    let toDoLists = this.getToDoListFromStorage();
+    const ListItemToDelete = toDoLists[id];
 
-    static removeToDoListBtn = () => {
-      document.querySelectorAll('.remove_btn').forEach((button) => button.addEventListener('click', (event) => {
+    toDoLists = toDoLists.filter((item) => item !== ListItemToDelete);
+
+    this.newIndexNum(toDoLists);
+    this.addListToStorage(toDoLists);
+  };
+
+  // Update task description (used in modify via inline edit)
+  static ListInputUpdate = (newDescription, id) => {
+    const toDoLists = this.getToDoListFromStorage();
+    const updateList = toDoLists[id];
+
+    toDoLists.forEach((item) => {
+      if (item === updateList) {
+        item.description = newDescription;
+      }
+    });
+
+    this.addListToStorage(toDoLists);
+    this.showLists(); // Re-render with current filter
+  };
+
+  // New/Updated: Independent remove (trash always visible)
+  static setupDeleteBtn = () => {
+    document.querySelectorAll('.remove_btn').forEach((button) => {
+      button.style.display = 'block'; // Always visible
+      // Clone to prevent duplicate listeners on re-render
+      const newButton = button.cloneNode(true);
+      button.parentNode.replaceChild(newButton, button);
+      newButton.addEventListener('click', (event) => {
         event.preventDefault();
-        let id;
-        if (button.id > 0) {
-          id = button.id - 1;
-        } else {
-          id = 0;
-        }
+        let id = parseInt(newButton.id) - 1;
         this.deleteListData(id);
-        this.showLists();
-      }));
-    };
+        this.showLists(); // Re-render with filter
+      });
+    });
+  };
 
-    // section created dynamiclly
-    static toDoListsHtml = ({ description, index }, statusCheck, statusCompleted) => {
-      const ul = document.createElement('ul');
-      ul.className = 'to-do';
-      ul.innerHTML = `
-        <li><input class="checkbox" id="${index}" type="checkbox" ${statusCheck}></li> 
-        <li><input id="LIST${index}" type="text" class="text${statusCompleted}" value="${description}" readonly></li>
-        <li class="remove-edit">
-        <button class="edit_list_btn" id="${index}"><i class="fa fa-ellipsis-v icon"></i></button>
-        <button class="remove_btn" id="${index}"><i class="fa fa-trash-can icon"></i></button>
-        </li>
-      `;
-      return ul;
-    }
+  // New: Inline editing (click text to edit, save on blur/Enter)
+  static setupInlineEditing = () => {
+    document.querySelectorAll('.task-input').forEach((input) => {
+      // Set original value if not already set
+      if (!input.dataset.original) {
+        input.dataset.original = input.value;
+      }
 
-    // show listed tasks
-    static showLists = () => {
-      const toDoLists = this.getToDoListFromStorage();
-      document.querySelector('.toDoListContainer').innerHTML = '';
-      toDoLists.forEach((item) => {
-        let statusCheck;
-        let statusCompleted;
-        if (item.completed === true) {
-          statusCheck = 'checked';
-          statusCompleted = 'completed';
-        } else {
-          statusCheck = '';
-          statusCompleted = '';
+      // Click to enable editing
+      input.addEventListener('click', (e) => {
+        if (input.readOnly) {
+          input.readOnly = false;
+          input.focus();
+          input.classList.add('editing');
+          input.select(); // Select text for easy edit
         }
-        document.querySelector('.toDoListContainer').appendChild(this.toDoListsHtml(item, statusCheck, statusCompleted));
       });
 
-      this.removeToDoListBtn();
-      this.editListBtnEvent();
-      this.updateListBtnEvent();
+      // Save on blur (click away)
+      input.addEventListener('blur', (e) => {
+        const newDesc = e.target.value.trim();
+        const original = e.target.dataset.original;
+        const listIndex = parseInt(e.target.id.replace('LIST', '')) - 1;
+        
+        if (newDesc && newDesc !== original) {
+          this.ListInputUpdate(newDesc, listIndex);
+          e.target.dataset.original = newDesc; // Update original
+        } else if (!newDesc) {
+          // Revert if empty
+          e.target.value = original;
+        }
+        e.target.readOnly = true;
+        e.target.classList.remove('editing');
+      });
 
-      const event = new Event('listUpdated');
-      document.dispatchEvent(event);
-    };
-
-    // add a task to a list
-    static addLists = (description) => {
-      const toDoLists = this.getToDoListFromStorage();
-      const index = toDoLists.length + 1;
-      const newtask = new DataList(description, false, index);
-
-      toDoLists.push(newtask);
-      this.addListToStorage(toDoLists);
-      this.showLists();
-    }
-
-    // update to do list
-    static updateListBtnEvent = () => {
-      document.querySelectorAll('.text').forEach((input) => input.addEventListener('keypress', (event) => {
+      // Save on Enter
+      input.addEventListener('keypress', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
-          const inputListId = 'LIST';
-          const ListIdSelected = event.currentTarget.id;
-          let listID;
-
-          if (!ListIdSelected.includes('LIST')) {
-            listID = inputListId.concat(ListIdSelected);
-          } else {
-            listID = ListIdSelected;
-          }
-
-          document.getElementById(listID).setAttribute('readonly', 'readonly');
-          this.ListInputUpdate(document.getElementById(listID).value, (Number(listID.replace('LIST', '')) - 1));
+          input.blur(); // Trigger save
         }
-      }));
-    }
+      });
+    });
+  };
 
-    // edit list
-    static editListBtnEvent = () => {
-      let previousList = null;
-      document.querySelectorAll('.edit_list_btn').forEach((button) => button.addEventListener('click', (event) => {
-        event.preventDefault();
-        const inputListId = 'LIST';
-        const ListIdSelected = event.currentTarget.id;
-        let listID;
+  // Updated: Generate task HTML (supports inline edit/remove)
+  static toDoListsHtml = ({ description, index }, statusCheck, statusCompleted) => {
+    const ul = document.createElement('ul');
+    ul.className = 'to-do';
+    ul.innerHTML = `
+      <li><input class="checkbox" id="${index}" type="checkbox" ${statusCheck}></li> 
+      <li><input id="LIST${index}" type="text" class="task-input ${statusCompleted}" value="${description}" readonly data-original="${description}"></li>
+      <li class="remove-edit">
+        <button class="edit_list_btn" id="${index}"><i class="fa fa-ellipsis-v icon"></i></button>
+        <button class="remove_btn" id="${index}"><i class="fa fa-trash-can icon"></i></button>
+      </li>
+    `;
+    return ul;
+  }
 
-        if (!ListIdSelected.includes('LIST')) {
-          listID = inputListId.concat(ListIdSelected);
-        } else {
-          listID = ListIdSelected;
-        }
+  // show listed tasks (now applies current filter)
+  static showLists = () => {
+    this.filterTasks(this.currentFilter);
+  };
 
-        if (previousList !== null) {
-          previousList.getElementById(listID).removeAttribute('readonly');
-        }
+  // add a task (unchanged, but re-renders with filter)
+  static addLists = (description) => {
+    const toDoLists = this.getToDoListFromStorage();
+    const index = toDoLists.length + 1;
+    const newtask = new DataList(description, false, index);
 
-        const listItem = event.target.closest('li');
-        previousList = listItem;
-        const ulItem = event.target.closest('ul');
+    toDoLists.push(newtask);
+    this.addListToStorage(toDoLists);
+    this.showLists();
+  }
 
-        listItem.style.background = 'rgb(230, 230, 184)';
-        ulItem.style.background = 'rgb(230, 230, 184)';
-
-        document.getElementById(listID).removeAttribute('readonly');
-        document.getElementById(listID).focus();
-        document.getElementById(listID).style.background = 'rgb(230, 230, 184)';
-        listItem.querySelector('.edit_list_btn').style.display = 'none';
-        listItem.querySelector('.remove_btn').style.display = 'block';
-      }));
-    };
+  // Note: Old methods (editListBtnEvent, updateListBtnEvent, removeToDoListBtn) removed as replaced by inline/setup methods
 }
